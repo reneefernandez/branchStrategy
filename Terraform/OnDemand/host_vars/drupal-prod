@@ -1,0 +1,18 @@
+project_path: "../appd"
+tf_variables_ext:
+  Environment: "{{ env }}"
+  URL_Repo: "{{ ECR_URI }}/lp_nginx:latest"
+tf_variables: '{{ tf_variables_common | combine(tf_variables_ext) }}'
+
+current_env: "{{ current_environments['Production_appd'] }}" # not title case
+
+ssm_template: "SecretLP-{{ current_env }}"
+ssm_name: "SecretLP-{{ env }}"
+ssm_updated_values:
+  PassDB: "{{ lookup('password', '/dev/null length=15 chars=ascii_letters') }}"
+  EndPoint: "{{ env }}-rds.client.com"
+
+ssm_template_aws_profile: "sharedservices"
+ssm_aws_profile: "sharedservices"
+
+src_dbsync: "Staging"

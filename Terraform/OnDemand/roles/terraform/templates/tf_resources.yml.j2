@@ -1,0 +1,8 @@
+workspace_name: "{{ workspace_name }}"
+project_path: "{{ project_path }}"
+env: "{{ env }}"
+backend_config: "{{ backend_config }}"
+tf_vars:
+{% for tf_var in tf_variables %}
+    {{ tf_var }}: "{{ tf_variables[tf_var] }}"
+{% endfor %}

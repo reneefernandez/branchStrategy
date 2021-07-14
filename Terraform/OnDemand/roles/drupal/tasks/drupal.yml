@@ -1,0 +1,55 @@
+- name: Start appd tasks
+  command: echo "Hello appd"
+  register: helloappd
+  tags:
+    - appd
+
+- debug: msg="{{ helloappd.stdout }}"
+  tags:
+    - appd
+
+# - name: run db sync
+#   script: "syncdb.sh {{ src_dbsync }} {{ env }} {{ tf_variables.Account_Name }}"
+
+#   # Find all groups
+# - ec2_instance_info:
+#     profile: "{{ tf_variables.Account_Name }}"
+#     region: "{{ tf_variables.Region }}"
+#     filters:
+#       "tag:Name": "ASG_appd_{{ env }}"
+#   register: ec2
+
+# - set_fact:
+#     appd_priv_ip: "{{ ec2['instances'][0]['private_ip_address'] }}"
+
+# - debug:
+#     var: appd_priv_ip
+
+# - name: get secret key already exists
+#   command: "aws secretsmanager  get-secret-value --profile {{ ssm_aws_profile }} --region {{ tf_variables.Region }} --secret-id {{ ssm_name }}"
+#   register: _aws_secret_check
+#   become: no
+#   ignore_errors: yes
+
+# - set_fact:
+#     ssm_vals: "{{(_aws_secret_check.stdout | from_json)['SecretString'] | from_json }}"
+
+# - name: Pull container on instance
+#   command: "ssh -i {{key_pair}} -o StrictHostKeyChecking=no ec2-user@{{ appd_priv_ip }} '
+#     ECR_URL=\"561491151124.dkr.ecr.us-west-2.amazonaws.com/lp_appd:latest\" && \
+#     aws ecr get-login --registry-ids 561491151124 --region us-west-2 --no-include-email | bash && \
+#     docker pull $ECR_URL  && \
+#     docker rm -f $(docker ps -aq) && \
+#     docker run -dit -p 80:80 --name appd_container -e CDNDomain=cdn.{{ env }}.client.com -e DBName={{ssm_vals['DBName']}} -e PassDB={{ ssm_vals['PassDB'] }} -e EndPoint={{ ssm_vals['EndPoint'] }} -e UserName={{ ssm_vals['UserDB'] }} -e HASH={{ ssm_vals['HASH'] }} -v /home/ec2-user/appd_files:/efs_files 561491151124.dkr.ecr.us-west-2.amazonaws.com/lp_appd:latest && \
+#     docker exec $(docker ps -aq) rm -r /var/www/html/client/app/sites/default/files && \
+#     docker exec $(docker ps -aq) a2enmod headers && \
+#     docker exec $(docker ps -aq) service apache2 reload && \
+#     docker exec $(docker ps -aq) ln -s /efs_files /var/www/html/client/app/sites/default/files  && \
+#     docker exec $(docker ps -aq) chmod -R 776 /var/www/html/client/app/sites/default/files/ && \
+#     docker exec $(docker ps -aq) chown -R www-data: /var/www/html/client/app/sites/default/files/ && \
+#     docker exec -w \"/var/www/html/client/app\" $(docker ps -aq) drush cim --partial && \
+#     docker exec -w \"/var/www/html/client/app\" $(docker ps -aq) drush updb -y && \
+#     docker exec -w \"/var/www/html/client/app\" $(docker ps -aq) drush cim -y  && \
+#     docker exec -w \"/var/www/html/client/app\" $(docker ps -aq) drush cr -y
+#   '
+#   "

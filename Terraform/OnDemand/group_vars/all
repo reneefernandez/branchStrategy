@@ -1,0 +1,43 @@
+tf_state_dir_name: "tf_state"
+state: "{{ tf_state }}"
+backend_config: "{{ tf_backend_config }}"
+tf_variables_common:
+    Account_Name: "{{ tf_profile }}"
+    Region: "{{ tf_region }}"
+    on_demand: "true"
+    
+ECR_URI: "561491151124.dkr.ecr.{{ tf_region }}.amazonaws.com"
+
+
+deploy_token: "{{ gitlab_pat_token }}"
+
+# git@gitlab.com:clienthq/helsinki/client-services.git
+# https://gitlab.com/clienthq/helsinki/client-services.git
+
+serverless_repo: "https://personal_token:{{ deploy_token }}@gitlab.com/clienthq/helsinki/client-services.git"
+repo_dest_dir: "./temp/serverless/"
+
+resources_path: "./resources"
+
+key_pair: "{{ key_pair }}"
+
+# Image build options.
+ecr_image_src_dir: "{{ repo_dest_dir }}"
+# ecr_image_name: test
+
+ecr_image_buildargs: {}
+
+# You can add one or more tags.
+ecr_image_tags: []
+
+# Set this to true if you need to pull from ECR for the image build.
+ecr_login_required: false
+
+# Whether to push the built image to ECR.
+ecr_push: true
+
+# AWS account details for ECR.
+ecr_region: us-west-2
+ecr_account_id: '561491151124'
+ecr_url: "{{ ecr_account_id }}.dkr.ecr.{{ ecr_region }}.amazonaws.com"
+ecr_profile: sharedservices

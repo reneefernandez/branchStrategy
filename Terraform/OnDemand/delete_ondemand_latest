@@ -1,0 +1,3 @@
+#!/bin/bash
+
+time ansible-playbook -i latest_hosts delete_ondemand_terraform.yml -e tf_backend_config="backendLatest.hcl" $@

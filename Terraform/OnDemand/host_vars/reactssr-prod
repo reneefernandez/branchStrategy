@@ -1,0 +1,23 @@
+project_path: "../React"
+tf_variables_ext:
+  Environment: "react-{{ env }}"
+  URL_Repo: "{{ ECR_URI }}/client-ssr:latest"
+tf_variables: '{{ tf_variables_common | combine(tf_variables_ext) }}'
+
+current_env: "{{ current_environments['Production_React'] }}" # not title case
+
+git_repo: "https://personal_token:{{ deploy_token }}@gitlab.com/clienthq/rio/client-react-ssr.git"
+repo_dest_dir: "./temp/reactssr/"
+
+reactssr_repo_version: "develop"
+repo_version: "{{ reactssr_repo_version }}"
+
+ecr_image_name: ondemand_client-ssr
+
+ecs_tag: "ondemand_{{ env }}_{{ repo_version }}"
+
+ecs_taskdefinition_name: "TaskDF-React-{{ tf_variables.Environment }}"
+ecs_container_image: "{{ ecr_url }}/{{ ecr_image_name }}:{{ ecs_tag }}"
+
+ecs_service_name: "Service-{{ tf_variables.Environment }}"
+ecs_service_cluster: "Cluster-{{ tf_variables.Environment }}"

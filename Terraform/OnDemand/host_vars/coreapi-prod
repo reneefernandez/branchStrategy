@@ -1,0 +1,39 @@
+project_path: "../appcAPI"
+tf_variables_ext:
+  Environment: "appcapi-{{ env }}"
+  URL_Repo: "{{ ECR_URI }}/client-services:latest"
+tf_variables: '{{ tf_variables_common | combine(tf_variables_ext) }}'
+
+current_env: "{{ current_environments['Production_appcAPI'] }}" # not title case
+
+# TODO: create_ssm updated values
+ssm_template: "Secret-appcapi-{{ current_env }}"
+ssm_name: "Secret-{{ tf_variables_ext.Environment }}"
+ssm_vals_ext:
+  SERVICES_API: "https://api.{{ env }}.client.com/v1"
+ssm_updated_values: '{{ appc_services_resources | combine(ssm_vals_ext) }}'
+  # CORPORATE_PARTNER_TABLENAME: "CORPORATE_PARTNER_TABLENAME"
+  # CORPORATE_PARTNERS_BUCKET: "CORPORATE_PARTNERS_BUCKET"
+  # EDUCATION_PARTNER_TABLENAME: "EDUCATION_PARTNER_TABLENAME"
+  # ELIGIBILITY_TABLENAME: "ELIGIBILITY_TABLENAME"
+  # MAPPING_EXTERNAL_CORPORATE_PARTNER_TABLENAME: "MAPPING_EXTERNAL_CORPORATE_PARTNER_TABLENAME"
+  # SEND_PENDING_LEADS_STATE_MACHINE: "SEND_PENDING_LEADS_STATE_MACHINE"
+
+ssm_template_aws_profile: "{{ tf_variables_common.Account_Name }}"
+ssm_aws_profile: "{{ tf_variables_common.Account_Name }}"
+
+git_repo: "https://personal_token:{{ deploy_token }}@gitlab.com/clienthq/nairobi/client-services-tng.git"
+repo_dest_dir: "./temp/appcapi/"
+
+appcapi_repo_version: "{{ appcapi_ref }}"
+repo_version: "{{ appcapi_repo_version }}"
+
+ecr_image_name: ondemand_client-services
+
+ecs_tag: "ondemand_{{ env }}_{{ repo_version }}"
+
+ecs_taskdefinition_name: "TaskDF-appcAPI-{{ tf_variables.Environment }}"
+ecs_container_image: "{{ ecr_url }}/{{ ecr_image_name }}:{{ ecs_tag }}"
+
+ecs_service_name: "Service-{{ tf_variables.Environment }}"
+ecs_service_cluster: "Cluster-{{ tf_variables.Environment }}"

@@ -1,0 +1,139 @@
+- name: Clear previous resources folder
+  hosts: all
+  become: false
+  gather_facts: false
+  vars:
+    reboot: false
+  tasks:
+      
+    - name: Update all packages to the latest version
+      apt:
+        upgrade: yes
+      become: yes
+
+    - name: "install node v12 from source"
+      shell: curl -sL https://deb.nodesource.com/setup_12.x | sudo -E bash -
+  
+    - name: "install dependencies"
+      apt:
+        name: "{{ packages }}"
+        update_cache: yes
+        force_apt_get: yes
+      vars:
+        packages:
+        - docker-ce
+        - python3-distutils
+        - gcc
+        - g++
+        - make
+        - nodejs
+        - ruby-full
+        - build-essential
+        - curl
+        - file
+        - git
+        - ansible
+        - jq
+        - openjdk-8-jdk
+      become: yes
+
+    - name: Check if Homebrew is already installed
+      stat:
+        path: /home/linuxbrew/.linuxbrew/
+      register: b
+
+    - name: Install Homebrew
+      script: install-homebrew.sh
+      when: not b.stat.exists
+
+    - name: "update sam version"
+      shell: "/home/linuxbrew/.linuxbrew/bin/brew tap aws/tap"
+
+    - homebrew:
+        name: "{{ packages }}"
+        path: /home/linuxbrew/.linuxbrew/bin/
+      vars:
+        packages:
+          - aws-sam-cli          
+          - python3
+          - nvm
+
+    - file: path=/home/ubuntu/.nvm state=directory
+      become: yes
+
+    - file: path=/home/ubuntu/.bash_profile state=touch
+      become: yes
+
+    - name: Export values into .bash
+      shell: |
+          echo 'export NVM_DIR=/home/ubuntu/.nvm' > /home/ubuntu/.bash_profile
+          echo 'source $(/home/linuxbrew/.linuxbrew/bin/brew --prefix nvm)/nvm.sh' > /home/ubuntu/.bash_profile
+      become: yes
+
+    - name: Source bash file
+      shell: source /home/ubuntu/.bash_profile
+      args:
+        executable: /bin/bash
+      become: no
+      ignore_errors: yes
+
+    - name: "brew link python3"
+      shell: "/home/linuxbrew/.linuxbrew/bin/brew link python3"
+
+    - name: "get pip"
+      shell: |
+          wget -q https://bootstrap.pypa.io/get-pip.py
+          python3 get-pip.py
+    
+    - file: path="get-pip.py" state=absent
+
+    - name: "link pip"
+      file:
+        src: /home/ubuntu/.local/bin/pip3
+        dest: /usr/local/bin/pip
+        state: link
+      become: yes
+
+    - name: "link pip"
+      file:
+        src: /home/ubuntu/.local/bin/pip3
+        dest: /usr/local/bin/pip3
+        state: link
+      become: yes
+
+    - name: "pip install ecs-deploy"
+      pip:
+        name: "{{ packages }}"
+        state: latest
+      vars:
+        packages:
+        - setuptools
+        - boto3
+        - ecs-deploy
+      # become: yes
+
+    - name: "ensure docker daemon started"
+      service:
+        name: docker 
+        state: started
+
+    - name: "add docker to ubuntu group"
+      shell: "usermod -a -G docker ubuntu"
+      become: yes
+
+    - name: "Remove stale docker images"
+      shell: "docker rmi $(docker images -aq)"
+      ignore_errors: yes
+
+    - name: Ensures /home/ubuntu/.aws/ dir exists
+      file: path=/home/ubuntu/.aws/ state=directory
+      
+    - name: Copy file with owner and permissions
+      copy:
+        src: aws_creds
+        dest: /home/ubuntu/.aws/credentials
+
+    - name: Unconditionally reboot the machine with all defaults
+      reboot:
+      become: yes
+      when: reboot|bool

@@ -1,0 +1,168 @@
+---
+- name: Clear previous resources folder
+  hosts: all
+  become: false
+  gather_facts: false
+  tasks:
+    - name: "Removing {{ resources_path }} folder"
+      file: path="{{ resources_path }}" state=absent
+      run_once: true
+
+    - name: "Replacing {{ resources_path }} folder"
+      file: path="{{ resources_path }}" state=directory
+      run_once: true
+
+    - file: path="appcapi_vars.yml" state=touch
+      run_once: true
+    
+    - file: path="appjs_vars.yml" state=touch
+      run_once: true
+
+- name: Get environment names
+  hosts: all
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Check current environments
+      uri:
+        url: https://r0pw71mgn5.execute-api.us-west-2.amazonaws.com/prod/active-env
+        return_content: yes
+      register: this
+      failed_when: this.status != 200
+      run_once: yes
+
+    - set_fact:
+        env_response: "{{ this.json.body }}"
+
+
+- name: Run Terraform deploy of all hosts
+  hosts: latest:prod
+  become: false
+  gather_facts: false
+  # strategy: free
+  vars:
+    terraform_apply: true
+    terraform_destroy: false
+    tf_state: "planned"
+    tf_backend_config: backendDev.hcl
+    tf_region: "us-west-2"
+    tf_profile: "latest"
+    env: "demo"
+    current_environments: "{{ hostvars[inventory_hostname]['env_response'] }}"
+    appc_services_resources: {}
+  pre_tasks:
+    - name: Ensure Install boto3
+      pip:
+        name: boto3
+        state: present
+      # become: yes
+      when: "'serverless' in inventory_hostname"
+
+    - debug: msg="{{ current_environments }}"
+      delegate_to: localhost
+    
+    - name: Update appd secretmanager
+      include_role:
+        name: secretmanager
+      tags:
+        - secretmanager
+      when: "'appd' in inventory_hostname"
+
+    - name: Deploy Terraform
+      include_role:
+        name: terraform
+      tags:
+        - terraform
+      when: "'serverless' not in inventory_hostname"
+
+  roles:
+    - { role: serverless, become: false, tags: ["serverless"], when: "'serverless' in inventory_hostname" }
+
+  post_tasks:
+    - name: Update secretmanager
+      include_role:
+        name: secretmanager
+      tags:
+        - secretmanager
+      when: "'appui' in inventory_hostname"
+
+- name: Update appcapi secretmanager
+  hosts: appcapi-latest:appcapi-prod
+  become: false
+  gather_facts: false
+  vars:
+    env: "demo"
+    tf_region: "us-west-2"
+    tf_profile: "latest"
+    current_environments: "{{ hostvars[inventory_hostname]['env_response'] }}"
+  vars_files:
+    - "appcapi_vars.yml"
+  tasks:
+    - debug: msg="{{ appc_services_resources }}"
+
+    - name: Update secretmanager
+      include_role:
+        name: secretmanager
+      tags:
+        - secretmanager
+
+- name: Update appjs secretmanager
+  hosts: appjs-latest
+  become: false
+  gather_facts: false
+  vars:
+    env: "demo"
+    tf_region: "us-west-2"
+    tf_profile: "latest"
+    current_environments: "{{ hostvars[inventory_hostname]['env_response'] }}"
+  vars_files:
+    - "appjs_vars.yml"
+  tasks:
+    - debug: msg="{{ appjs_services_resources }}"
+
+    - name: Update secretmanager
+      include_role:
+        name: secretmanager
+      tags:
+        - secretmanager
+
+# - name: Run ECR Build and deploy deploy of all hosts
+#   hosts: latest:!serverless-latest:!reactssr-latest
+#   become: false
+#   gather_facts: false
+#   strategy: free
+#   vars:
+#     tf_region: us-west-2
+#   roles:
+#     - { role: ecr_container_build, become: false, tags: ["ecr_container_build"] }
+#     - { role: deploy_ecs_task_service, become: false, tags: ["deploy_ecs_task_service"] }
+ 
+    
+- name: Create file of resources
+  hosts: all
+  become: false
+  gather_facts: false
+  vars:
+    env: "demo"
+  tasks:
+    - file: path="{{ resources_path }}" state=directory
+      delegate_to: localhost
+      run_once: true
+
+    - file: path="./resources_archive" state=directory
+      delegate_to: localhost
+      run_once: true
+
+    - name: Get timestamp from the system
+      shell: "date +%Y%m%d%H%M%S"
+      register: tstamp
+      delegate_to: localhost
+      run_once: true
+
+    - name: Create a zip archive of resources
+      archive:
+        path: "{{ resources_path }}"
+        dest: "./resources_archive/{{ env }}_resources_{{ tstamp.stdout }}.zip"
+        format: zip
+      delegate_to: localhost
+      run_once: true

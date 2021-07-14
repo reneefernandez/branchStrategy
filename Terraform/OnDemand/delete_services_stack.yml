@@ -1,0 +1,115 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    dynamodb_table_names: []
+    services_bucket_names: []
+    bucket_names: []
+    profile: latest
+    region: "us-west-2"
+    env: "dev-2"
+    stack_name: "{{ env }}-services"
+    delete_action: false
+  tasks:
+
+  - name: Get stack
+    shell: "aws cloudformation describe-stacks --stack-name {{ stack_name }} --profile {{ profile }} --region {{ region }}"
+    register: stack
+    ignore_errors: true
+
+  - set_fact:
+      info: "{{ stack.stdout_lines }}"
+    register: stack_info
+
+  # - debug: msg="{{ stack_info }}"
+
+  - name: Delete cloudformation stack
+    shell: "aws cloudformation delete-stack --stack-name {{ stack_name }} --profile {{ profile }} --region {{ region }}"
+    when: delete_action|bool
+
+  - name: Get dynamodb
+    shell: "aws dynamodb list-tables --profile {{ profile }} --region {{ region }} --output text | awk '/{{ stack_name }}/ {print $2}'"
+    register: table_list
+  - name: table_info
+  
+    set_fact:
+      info: "{{ table_list.stdout_lines }}"
+    register: table_info
+
+  # - debug: msg="{{ table_info }}"
+    
+  - name: Build a list of all the dynamodb table names.
+    set_fact:
+      dynamodb_table_names: "{{ dynamodb_table_names }} + [ '{{ item }}' ]"
+    with_items: " {{ table_info.ansible_facts.info }}"
+
+  - name: Delete dynamodb
+    shell: "aws dynamodb delete-table --table-name {{ item }} --profile {{ profile }} --region {{ region }} "
+    loop: "{{ dynamodb_table_names }}"
+    when: delete_action|bool
+
+# Get services s3 buckets
+  - name: Get services s3 buckets
+    shell: "aws s3api list-buckets --profile {{ profile }} --region {{ region }} --output json --query 'Buckets[?contains(Name, `{{ stack_name }}`)].Name'"
+    register: bucket_list
+  
+  - set_fact:
+      info: "{{ bucket_list.stdout | from_json }}"
+    register: bucket_info
+
+  # - debug: msg="{{ bucket_info }}"
+    
+  - name: Build a list of all the s3 bucket names.
+    set_fact:
+      services_bucket_names: "{{ services_bucket_names }} + [ '{{ item }}' ]"
+    with_items: " {{ bucket_info.ansible_facts.info }}"
+
+  - name: Get s3
+    shell: "aws s3 rb s3://{{ item }} --force --profile {{ profile }} --region {{ region }}"
+    loop: "{{ services_bucket_names }}"
+    when: delete_action|bool
+
+# Get remaining s3 buckets
+  - name: Get services s3 buckets
+    shell: "aws s3api list-buckets --profile {{ profile }} --region {{ region }} --output json --query 'Buckets[?contains(Name, `{{ stack_name.split('-')[0] }}`)].Name'"
+    register: bucket_list
+  
+  - set_fact:
+      info: "{{ bucket_list.stdout | from_json }}"
+    register: bucket_info
+
+  # - debug: msg="{{ bucket_info }}"
+    
+  - name: Build a list of all the s3 bucket names.
+    set_fact:
+      bucket_names: "{{ bucket_names }} + [ '{{ item }}' ]"
+    when: item not in services_bucket_names
+    with_items: " {{ bucket_info.ansible_facts.info }}"
+
+  - name: Get s3
+    shell: "aws s3 rb s3://{{ item }} --force --profile {{ profile }} --region {{ region }}"
+    loop: "{{ bucket_names }}"
+    when: delete_action|bool
+
+  ## outputs for viz
+
+  - name: TO_DELETE - Show stack info
+    debug:
+      var: stack_info
+    when: not delete_action
+    
+  - name: TO_DELETE - Output the dynamodb table names
+    debug:
+      var: dynamodb_table_names
+    when: not delete_action
+          
+  - name: TO_DELETE - Output the s3 services names
+    debug:
+      var: services_bucket_names
+    when: not delete_action
+
+  - name: TO_DELETE - Output the s3 remaining names
+    debug:
+      var: bucket_names
+    when: not delete_action

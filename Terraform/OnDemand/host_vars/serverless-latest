@@ -1,0 +1,22 @@
+repo_version: "develop"
+
+stack_name: "{{ env }}-services"
+
+s3_bucket_name: "ondemand-{{ env }}-shared-bucket"
+s3_bucket_state: present
+s3_bucket_profile: "{{ tf_variables_common.Account_Name }}"
+s3_bucket_region: "{{ tf_variables_common.Region }}"
+
+domain_cert: "demo"
+
+appc_resources:
+    {
+        'CorporatePartnerTable': "CORPORATE_PARTNER_TABLENAME",
+        'CorporatePartnersS3Bucket': 'CORPORATE_PARTNERS_BUCKET',
+        'EducationPartnerTable': 'EDUCATION_PARTNER_TABLENAME',
+        'EligibilityTable': 'ELIGIBILITY_TABLENAME',
+        'MappingExternalCorporatePartnerTable': 'MAPPING_EXTERNAL_CORPORATE_PARTNER_TABLENAME',
+        'SendPendingLeadsStateMachine': 'SEND_PENDING_LEADS_STATE_MACHINE'
+    }
+
+appjs_resources: {}

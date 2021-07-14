@@ -1,0 +1,86 @@
+
+
+- name: Get environment names
+  hosts: appd-latest
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Check current environments
+      uri:
+        url: https://r0pw71mgn5.execute-api.us-west-2.amazonaws.com/prod/active-env
+        return_content: yes
+      register: this
+      failed_when: this.status != 200
+      run_once: yes
+
+    - set_fact:
+        env_response: "{{ this.json.body }}"
+
+- name: Run appd last steps
+  hosts: appd-latest
+  become: false
+  gather_facts: false
+  vars:
+    terraform_apply: true
+    terraform_destroy: false
+    tf_state: "planned"
+    tf_backend_config: backendDev.hcl
+    tf_region: "us-west-2"
+    tf_profile: "latest"
+    env: "demo"
+    current_environments: "{{ hostvars[inventory_hostname]['env_response'] }}"
+    appc_services_resources: {}
+  tasks:
+
+      # Find all groups
+    - ec2_instance_info:
+        profile: "{{ tf_variables.Account_Name }}"
+        region: "{{ tf_variables.Region }}"
+        filters:
+          "tag:Name": "ASG_appd_{{ env }}"
+      register: ec2
+
+    - set_fact:
+        appd_priv_ip: "{{ ec2['instances'][0]['private_ip_address'] }}"
+
+    - debug:
+        var: appd_priv_ip
+
+    - name: get secret key already exists
+      command: "aws secretsmanager  get-secret-value --profile {{ ssm_aws_profile }} --region {{ tf_variables.Region }} --secret-id {{ ssm_name }}"
+      register: _aws_secret_check
+      become: no
+      ignore_errors: yes
+
+    - set_fact:
+        ssm_vals: "{{(_aws_secret_check.stdout | from_json)['SecretString'] | from_json }}"
+
+    - name: Pull container on instance
+      command: "ssh -i {{key_pair}} -o StrictHostKeyChecking=no ec2-user@{{ appd_priv_ip }} '
+        ECR_URL=\"561491151124.dkr.ecr.us-west-2.amazonaws.com/lp_appd:latest\" && \
+        aws ecr get-login --registry-ids 561491151124 --region us-west-2 --no-include-email | bash && \
+        docker pull $ECR_URL
+        '
+        "
+    - name: Pull container on instance
+      command: "ssh -i {{key_pair}} -o StrictHostKeyChecking=no ec2-user@{{ appd_priv_ip }} '
+        docker rm -f $(docker ps -aq)
+        '
+        "
+      ignore_errors: true
+      
+    - name: Pull container on instance
+      command: "ssh -i {{key_pair}} -o StrictHostKeyChecking=no ec2-user@{{ appd_priv_ip }} '
+        docker run -dit -p 80:80 --name appd_container -e CDNDomain=cdn.{{ env }}.client.com -e DBName={{ssm_vals['DBName']}} -e PassDB={{ ssm_vals['PassDB'] }} -e EndPoint={{ ssm_vals['EndPoint'] }} -e UserName={{ ssm_vals['UserDB'] }} -e HASH={{ ssm_vals['HASH'] }} -v /home/ec2-user/appd_files:/efs_files 561491151124.dkr.ecr.us-west-2.amazonaws.com/lp_appd:latest && \
+        docker exec $(docker ps -aq) rm -r /var/www/html/client/app/sites/default/files && \
+        docker exec $(docker ps -aq) a2enmod headers && \
+        docker exec $(docker ps -aq) service apache2 reload && \
+        docker exec $(docker ps -aq) ln -s /efs_files /var/www/html/client/app/sites/default/files  && \
+        docker exec $(docker ps -aq) chmod -R 776 /var/www/html/client/app/sites/default/files/ && \
+        docker exec $(docker ps -aq) chown -R www-data: /var/www/html/client/app/sites/default/files/ && \
+        docker exec -w \"/var/www/html/client/app\" $(docker ps -aq) drush cim --partial && \
+        docker exec -w \"/var/www/html/client/app\" $(docker ps -aq) drush updb -y && \
+        docker exec -w \"/var/www/html/client/app\" $(docker ps -aq) drush cim -y  && \
+        docker exec -w \"/var/www/html/client/app\" $(docker ps -aq) drush cr -y
+      '
+      "

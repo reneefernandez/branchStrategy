@@ -1,0 +1,21 @@
+---
+- name: Run ECR Build and deploy of all hosts
+  hosts: appcapi-latest:appui-latest:appjs-latest
+  become: false
+  gather_facts: false
+  vars:
+    tf_region: us-west-2
+    app_ref: develop
+    appcapi_ref: develop
+    appd_ref: develop
+  pre_tasks:
+    - name: Ensure Install docker for python
+      pip:
+        name: docker
+        state: present
+      become: yes
+      run_once: yes
+  roles:
+    - { role: ecr_container_build, become: false, tags: ["ecr_container_build"] }
+    - { role: deploy_ecs_task_service, become: false, tags: ["deploy_ecs_task_service"] }
+ 

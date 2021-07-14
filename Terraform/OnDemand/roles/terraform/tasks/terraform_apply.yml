@@ -1,0 +1,121 @@
+- name: Capturing Terraform Command
+  command: which terraform
+  register: _terraform_command
+  changed_when: false
+
+- name: Setting Terraform Command Path
+  set_fact:
+    terraform_command: "{{ _terraform_command['stdout'] }}"
+
+- name: register workspace name
+  set_fact:
+    workspace_name: "{{ project_path | regex_replace('(?![A-Z])\\W+', '') }}-{{ env[0]|upper }}{{ env[1:] }}"
+
+- name: Workspace Name
+  debug:
+    msg: "{{ workspace_name }}"
+
+- name: ensure previous initWorkspace file is gone
+  file: path="{{ project_path }}/initWorkspace" state=absent
+
+- name: set init workspace file
+  copy: src=initWorkspace dest="{{ project_path }}" mode=a+x
+
+- name: ensure previous .terraform state file is gone to avoid backend conflicts
+  file: path="{{ project_path }}/.terraform/" state=absent
+
+- name: Running Terraform workspace initialization
+  shell: "./initWorkspace {{ workspace_name }} {{ backend_config }}"
+  register: _terraform_init
+  changed_when: false
+  args:
+    chdir: "{{ project_path }}"
+  failed_when: _terraform_init['rc'] > 2
+
+- name: Terraform workspace init result output
+  debug: msg="{{ _terraform_init.stdout_lines }}"
+
+- name: cleanup initWorkspace file
+  file: path="{{ project_path }}/initWorkspace" state=absent
+
+- name: Find previous Terraform Variables files
+  find:
+    paths: "{{ project_path }}/"
+    patterns: "^.*.auto.tfvars"
+    recurse: yes
+    use_regex: yes
+  register: result_tf
+
+- name: Remove previous tfstate files
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  with_items: '{{ result_tf.files }}'
+
+- name: Generating Secret Terraform Variables
+  template:
+    src: templates/terraform.auto.tfvars.j2
+    dest: "{{ project_path }}/{{ env }}.auto.tfvars"
+
+- name: Run terraform plan and generate plan file
+  command: "{{ terraform_command }} plan -out=output.tfplan -input=false -detailed-exitcode -no-color"
+  register: _terraform_plan
+  changed_when: false
+  args:
+    chdir: "{{ project_path }}"
+  failed_when: _terraform_plan['rc'] > 2
+
+- debug: msg="{{ _terraform_plan.stdout_lines }}"
+  when: "'stdout_lines' in _terraform_plan"
+
+# - name: Run terraform scripts
+#   terraform:
+#     project_path: "{{ project_path }}"
+#     state: "{{ tf_state }}"
+#     plan_file: "{{ project_path }}/output.tfplan"
+#     workspace: "{{ workspace_name }}"
+
+- name: Applying Terraform Plan
+  command: "{{ terraform_command }} apply -input=false -auto-approve=true -no-color output.tfplan"
+  register: terraform_result
+  changed_when: false
+  args:
+    chdir: "{{ project_path }}"
+  when: _terraform_plan['rc'] == 2 and terraform_apply
+
+- debug: msg="{{ terraform_result.stdout_lines }}"
+  when: "'stdout_lines' in terraform_result"
+
+- name: Capturing Terraform State
+  command: "{{ terraform_command }} state pull"
+  register: _terraform_state
+  changed_when: false
+  args:
+    chdir: "{{ project_path }}"
+
+- set_fact: tf_state_dir="{{ tf_state_dir_name }}/{{ workspace_name }}"
+
+- name: Remove previous Terraform Ansible Inventory
+  file:
+    path: "./{{ tf_state_dir }}/terraform.inv"
+    state: absent
+
+- name: Create Directory for Terraform Ansible Inventory
+  file:
+    path: "./{{ tf_state_dir }}"
+    state: directory
+
+- name: Generating Terraform Ansible Inventory
+  template:
+    src: terraform.inv.j2
+    dest: "./{{ tf_state_dir }}/terraform.inv"
+
+- name: storing Terraform resources
+  file:
+    path: "{{ resources_path }}/{{ env }}/{{ workspace_name }}"
+    state: directory
+
+- name: storing Terraform resources
+  template:
+    src: tf_resources.yml.j2
+    dest: "{{ resources_path }}/{{ env }}/{{ workspace_name }}/tf_resources.yml"

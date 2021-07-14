@@ -1,0 +1,35 @@
+
+---
+- hosts: serverless-latest
+  connection: local
+  gather_facts: no
+  vars:
+    profile: latest
+    tf_region: "us-west-2"
+    env: "dev-2"
+    delete_action: false
+  tasks:
+  - name: Check if domain already exists
+    command: "aws apigateway get-domain-name --domain-name api.{{ env }}.client.com --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }}"
+    register: domain_check
+    ignore_errors: true
+
+  - debug: msg="{{ domain_check }}"
+
+  - name: Mapping API
+    command: "aws apigateway get-rest-apis --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }} --query \"items[?contains(name, '{{ env }}-services')].id\""
+    register: api_id_res
+
+  - debug: msg="{{ api_id_res.stdout }}"
+
+  - set_fact:
+      api_id: "{{ api_id_res.stdout | from_json }}"
+
+  - name: Remove old base path mapping
+    command: "aws apigateway delete-base-path-mapping --domain-name api.{{ env }}.client.com --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }} --base-path \"(none)\""
+    ignore_errors: yes
+    when: not domain_check.failed and delete_action
+
+  - name: Remove domain if already exists
+    command: "aws apigateway delete-domain-name --domain-name api.{{ env }}.client.com --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }}"
+    when: not domain_check.failed and delete_action

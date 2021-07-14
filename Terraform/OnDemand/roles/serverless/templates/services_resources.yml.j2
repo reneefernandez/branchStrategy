@@ -1,0 +1,15 @@
+stack_name: "{{ stack_name }}"
+
+repo_version: "{{ repo_version }}"
+
+s3_bucket_name: "{{ s3_bucket_name }}"
+s3_bucket_state: "{{ s3_bucket_state }}"
+s3_bucket_profile: "{{ s3_bucket_profile }}"
+s3_bucket_region: "{{ s3_bucket_region }}"
+
+appc_resources: {{ appc_resources | to_nice_json }}
+
+resources:
+{% for item in service_resources %}
+  {{ item.LogicalResourceId }}: "{{ item.PhysicalResourceId }}"
+{% endfor %}

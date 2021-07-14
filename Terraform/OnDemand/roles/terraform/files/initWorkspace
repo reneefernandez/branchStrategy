@@ -1,0 +1,37 @@
+#!/bin/bash
+
+
+WORKSPACE=$1
+BACKEND_CONFIG=$2
+
+TF_BACKEND_TOKEN=$(awk '/token/ { print $3 }' ~/.terraformrc | sed 's/\"//g')
+ORGANIZATION=$(awk '/organization/ {print $3}' $BACKEND_CONFIG | sed 's/\"//g')
+PREFIX=$(awk '/workspace/ {print $5}' $BACKEND_CONFIG | cut -d - -f 1 | sed 's/\"//g')
+
+printf "\nCurrent selected workspace:\n\t$(cat .terraform/environment)\n\n"
+echo '1' | TF_WORKSPACE="temp" terraform init --backend-config=$BACKEND_CONFIG -no-color
+if terraform workspace new $WORKSPACE -no-color; then
+  curl \
+  --header "Authorization: Bearer $(echo $TF_BACKEND_TOKEN)" \
+  --header "Content-Type: application/vnd.api+json" \
+  --request PATCH \
+  --data "{\"data\": {\"type\": \"workspaces\", \"attributes\": {\"operations\": false}}}" \
+  https://app.terraform.io/api/v2/organizations/$ORGANIZATION/workspaces/$PREFIX-$WORKSPACE
+
+else
+  terraform workspace select $WORKSPACE -no-color
+  curl \
+  --header "Authorization: Bearer $(echo $TF_BACKEND_TOKEN)" \
+  --header "Content-Type: application/vnd.api+json" \
+  --request PATCH \
+  --data "{\"data\": {\"type\": \"workspaces\", \"attributes\": {\"operations\": false}}}" \
+  https://app.terraform.io/api/v2/organizations/$ORGANIZATION/workspaces/$PREFIX-$WORKSPACE
+
+fi
+printf "\n"
+terraform workspace delete "temp" -no-color
+
+printf "\n"
+terraform init --backend-config=$BACKEND_CONFIG -no-color
+
+printf "\nOn selected workspace:\n\t$(cat .terraform/environment)\n"

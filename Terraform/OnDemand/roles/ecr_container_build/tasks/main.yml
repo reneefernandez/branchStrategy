@@ -1,0 +1,51 @@
+---
+  - name: Get repo
+    git:
+      repo: "{{ git_repo }}"
+      dest: "{{ repo_dest_dir }}"
+      version: "{{ repo_version }}"
+    register: git_checkout
+
+  - name: Create list of tags
+    set_fact:
+      ecr_image_tags: "{{ ecr_image_tags }} + [ '{{ item }}' ]"
+    when: item not in ecr_image_tags
+    with_items:
+      - "{{ ecs_tag }}"
+      - "ondemand_{{ env }}_{{ git_checkout.after }}"
+
+  - name: Log into ECR if required.
+    shell: "$(aws ecr get-login --no-include-email --region {{ ecr_region }} --profile sharedservices)"
+    tags: ['skip_ansible_lint']
+    when: ecr_push or ecr_login_required
+
+  - debug: var=ecr_image_tags.0
+
+  - debug: msg="Build Image"
+
+  - name: Build image.
+    docker_image:
+      build:
+        path: "{{ ecr_image_src_dir }}"
+        pull: false
+        args: "{{ ecr_image_buildargs | default(omit) }}"
+      name: "{{ ecr_image_name }}"
+      state: present
+      source: build
+      tag: "{{ ecr_image_tags.0 }}"
+
+  - name: Ensure ECR repo exists.
+    ecs_ecr:
+      name: "{{ ecr_image_name }}"
+      region: "{{ ecr_region }}"
+      registry_id: "{{ ecr_account_id }}"
+      state: present
+      profile: "{{ ecr_profile }}"
+    when: ecr_push
+
+  - name: Tag and push the image.
+    include_tasks: tag-and-push.yml
+    loop: "{{ ecr_image_tags }}"
+    loop_control:
+      loop_var: outer_item
+    when: ecr_push

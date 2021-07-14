@@ -1,0 +1,97 @@
+---
+- ecs_taskdefinition_info:
+    task_definition: "{{ ecs_taskdefinition_name }}"
+    profile: "{{ tf_variables.Account_Name }}"
+    region: "{{ tf_variables.Region }}"
+  register: task_def_out
+
+- debug: var=task_def_out
+
+- debug: msg="Revision {{task_def_out.revision}} is latest and {{task_def_out.status}}"
+  ignore_errors: true
+
+- name: Name for set_fact module.
+  set_fact: active_revision={{ task_def_out.revision }}
+  when: task_def_out.revision is defined
+
+- set_fact:
+    task_secrets: "[{\"name\": {{ task_def_out.container_definitions.0.secrets.0.name }}, \"valueFrom\": {{ task_def_out.container_definitions.0.secrets.0.value_from }}}]"
+  when: "'secrets' in task_def_out.container_definitions.0 and task_def_out.container_definitions.0.secrets != []"
+
+- debug: var=task_secrets
+
+- set_fact:
+    task_secrets: []
+    when: not task_secrets.0.name and not task_secrets.0.valueFrom
+
+- name: Create task definition
+  ecs_taskdefinition:
+    family: "{{ task_def_out.family }}"
+    execution_role_arn:  "{{ task_def_out.execution_role_arn }}"
+    containers:
+    - name:  "{{ task_def_out.container_definitions.0.name }}"
+      essential: "{{ task_def_out.container_definitions.0.essential }}"
+      image: "{{ ecs_container_image }}"
+      portMappings:
+      - containerPort: "{{ task_def_out.container_definitions.0.port_mappings.0.container_port }}"
+        hostPort:      "{{ task_def_out.container_definitions.0.port_mappings.0.host_port }}"
+      secrets: "{{ task_secrets or [] }}"
+      logConfiguration:
+        logDriver: "{{ task_def_out.container_definitions.0.log_configuration.log_driver }}"
+        options:  "{{ task_def_out.container_definitions.0.log_configuration.options }}"      
+    cpu:  "{{ task_def_out.cpu }}"
+    memory: "{{ task_def_out.memory }}"
+    state: present
+    network_mode: "{{ task_def_out.network_mode }}"
+    profile: "{{ tf_variables.Account_Name }}"
+    region: "{{ tf_variables.Region }}"
+    state: present
+  register: updated_task
+
+- name: "Make latest revision inactive"
+  ecs_taskdefinition:
+    family: "{{ task_def_out.family }}"
+    profile: "{{ tf_variables.Account_Name }}"
+    region: "{{ tf_variables.Region }}"
+    state: absent
+    revision: "{{active_revision}}"
+  register: task_output
+
+- name: Get exisiting ecs service
+  ecs_service_info:
+    service: "{{ ecs_service_name }}"
+    cluster: "{{ ecs_service_cluster }}"
+    details: true
+    profile: "{{ tf_variables.Account_Name }}"
+    region: "{{ tf_variables.Region }}"
+  register: service_info
+
+# Service Update
+- name: Create ecs service
+  ecs_service:
+    name: "{{ ecs_service_name }}"
+    state: present
+    cluster: "{{ ecs_service_cluster }}"
+    task_definition: "{{ updated_task.taskdefinition.family }}"
+    desired_count: "{{ service_info.services.0.desiredCount }}"
+    network_configuration:
+      assign_public_ip: "{%if service_info.services.0.networkConfiguration.awsvpcConfiguration.assignPublicIp == 'DISABLED' %}no{% else %}yes{% endif %}"
+      subnets: "{{ service_info.services.0.networkConfiguration.awsvpcConfiguration.subnets }}"
+      security_groups: "{{ service_info.services.0.networkConfiguration.awsvpcConfiguration.securityGroups }}"
+    load_balancers:  "{{ service_info.services.0.loadBalancers }}"
+    force_new_deployment: yes
+    profile: "{{ tf_variables.Account_Name }}"
+    region: "{{ tf_variables.Region }}"
+  register: service_output
+
+- name: Service Status     
+  debug: var=service_output.service.status
+
+- name: Service name 
+  debug: var=service_output.service.serviceName
+
+- name: Service ARN
+  debug: var=service_output.service.serviceArn
+
+- name: Cluster ARN 
+  debug: var=service_output.service.clusterArn

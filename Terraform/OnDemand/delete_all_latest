@@ -1,0 +1,11 @@
+#!/bin/bash
+
+enviro=$1
+
+# ansible-playbook delete_services_stack.yml -e env="$1" -e stack_name="$1-services" -e delete_action=true
+./delete_ondemand_latest -e env="$1" -e terraform_destroy=true -l 'reactssr-latest'
+./delete_ondemand_latest -e env="$1" -e terraform_destroy=true -l 'appcapi-latest'
+./delete_ondemand_latest -e env="$1" -e terraform_destroy=true -l 'appui-latest'
+./delete_ondemand_latest -e env="$1" -e terraform_destroy=true -l 'appjs-latest'
+./delete_ondemand_latest -e env="$1" -e terraform_destroy=true -l 'appd-latest'
+ansible-playbook -i latest_hosts delete_secret_no_recovery.yml -e env="$1" -e delete_action=true

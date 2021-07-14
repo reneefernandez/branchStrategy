@@ -1,0 +1,34 @@
+project_path: "../appUI"
+tf_variables_ext:
+  Environment: "appui-{{ env }}"
+  URL_Repo: "{{ ECR_URI }}/appui:latest"
+  # EnvironmentSecretName: "SecretappUI-Latest-appui-{{ env }}"
+tf_variables: '{{ tf_variables_common | combine(tf_variables_ext) }}'
+
+current_env: "{{ current_environments['Latest_appUI'] }}"
+
+ssm_template: "Secret-appui-{{ current_env }}"
+ssm_name: "Secret-{{ tf_variables_ext.Environment }}"
+ssm_updated_values:
+  REDIRECT_URI: "https://app.{{ env }}.client.com/callback"
+  SERVICE_DOMAIN: "https://api.{{ env }}.client.com"
+  appc_DOMAIN:	"https://appc.{{ env }}.client.com"
+
+ssm_template_aws_profile: "{{ tf_variables_common.Account_Name }}"
+ssm_aws_profile: "{{ tf_variables_common.Account_Name }}"
+
+git_repo: "https://personal_token:{{ deploy_token }}@gitlab.com/clienthq/nairobi/client-app-ui.git"
+repo_dest_dir: "./temp/appui/"
+
+appui_repo_version: "{{ app_ref }}"
+repo_version: "{{ appui_repo_version }}"
+
+ecr_image_name: ondemand_appui
+
+ecs_tag: "ondemand_{{ env }}_{{ repo_version }}"
+
+ecs_taskdefinition_name: "TaskDF-appui-{{ tf_variables.Environment }}"
+ecs_container_image: "{{ ecr_url }}/{{ ecr_image_name }}:{{ ecs_tag }}"
+
+ecs_service_name: "Service-{{ tf_variables.Environment }}"
+ecs_service_cluster: "Cluster-{{ tf_variables.Environment }}"

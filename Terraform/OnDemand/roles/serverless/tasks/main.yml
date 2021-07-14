@@ -1,0 +1,124 @@
+---
+- name: Start serverless deploy
+  debug:
+    msg: "Deploying services stack with stackname: {{ stack_name }}"
+
+- name: Get repo
+  git:
+    repo: "{{ serverless_repo }}"
+    dest: "{{ repo_dest_dir }}"
+    version: "{{ repo_version }}"
+    force: yes
+
+- name: Create S3 bucket
+  s3_bucket:
+    name: "{{ s3_bucket_name }}"
+    state: "{{ s3_bucket_state }}"
+    profile: "{{ s3_bucket_profile }}"
+    region: "{{ s3_bucket_region }}"
+
+- name: run npm install
+  command: "npm install"
+  args:
+    chdir: "{{ repo_dest_dir }}"
+
+- name: run npm run clean:all
+  command: "npm run clean:all"
+  args:
+    chdir: "{{ repo_dest_dir }}"
+
+- name: run npm run build
+  command: "npm run build"
+  args:
+    chdir: "{{ repo_dest_dir }}"
+
+- name: run npm run sam:build
+  command: "npm run sam:build"
+  args:
+    chdir: "{{ repo_dest_dir }}"
+
+- name: Deploying SAM package
+  command: "sam package --template-file template.yaml --s3-bucket {{ s3_bucket_name }} --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }} --output-template-file deploy.yaml"
+  args:
+    chdir: "{{ repo_dest_dir }}"
+
+- name:  Deploying SAM stack
+  command: "sam deploy --template-file deploy.yaml --stack-name {{ stack_name }} --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }} --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND --s3-bucket {{ s3_bucket_name }}"
+  args:
+    chdir: "{{ repo_dest_dir }}"
+
+- name: List stack resources
+  # command:  "aws cloudformation list-stack-resources --stack-name vidar-services --profile latest --region us-west-2 --output json"
+  command:  "aws cloudformation list-stack-resources --stack-name {{ stack_name }} --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }} --output json"
+  register: _aws_cloudformation_stack
+
+- set_fact: service_resources="{{ (_aws_cloudformation_stack.stdout | from_json)['StackResourceSummaries'] }}"
+
+- name: Generating appcAPI variables
+  template:
+    src: appcapi_vars.yml.j2
+    dest: "./appcapi_vars.yml"
+
+- name: storing appcAPI resources
+  file:
+    path: "{{ resources_path }}/{{ env }}"
+    state: directory
+
+- name: storing appcAPI resources
+  template:
+    src: services_resources.yml.j2
+    dest: "{{ resources_path }}/{{ env }}/services_resources.yml"
+
+- name: Clean up repo
+  file:
+    path: "{{ repo_dest_dir }}"
+    state: absent
+
+- name: Setting api gateway
+  command: "aws acm list-certificates --profile {{ s3_bucket_profile }} --region us-east-1 --query \"CertificateSummaryList[?contains(DomainName, '*.{{ domain_cert }}.client.com')].CertificateArn\""
+  register: arn_cert_res
+
+- set_fact:
+    arn_cert: "{{ arn_cert_res.stdout | from_json }}"
+
+- name: Check if domain already exists
+  command: "aws apigateway get-domain-name --domain-name api.{{ env }}.client.com --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }}"
+  register: domain_check
+  ignore_errors: true
+
+- name: Creating domain
+  command: "aws apigateway create-domain-name --domain-name api.{{ env }}.client.com --certificate-arn {{ arn_cert[0] }} --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }}"
+  when: domain_check.failed
+
+- name: Mapping API
+  command: "aws apigateway get-rest-apis --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }} --query \"items[?contains(name, '{{ env }}-services')].id\""
+  register: api_id_res
+
+- set_fact:
+    api_id: "{{ api_id_res.stdout | from_json }}"
+
+- name: Remove old base path mapping
+  command: "aws apigateway delete-base-path-mapping --domain-name api.{{ env }}.client.com --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }} --base-path \"(none)\""
+  ignore_errors: yes
+
+- name: Create base path mapping
+  command: "aws apigateway create-base-path-mapping --domain-name api.{{ env }}.client.com --profile {{ s3_bucket_profile }} --region {{ s3_bucket_region }} --base-path \"(none)\" --stage \"Prod\" --rest-api-id {{ api_id[0] }}"
+  register: create_base_path
+
+- debug:
+    var: create_base_path
+
+- name: Generating appJS variables
+  template:
+    src: appjs_vars.yml.j2
+    dest: "./appjs_vars.yml"
+
+- name: storing appJS resources
+  file:
+    path: "{{ resources_path }}/{{ env }}"
+    state: directory
+
+- name: storing appJS resources
+  template:
+    src: services_resources2.yml.j2
+    dest: "{{ resources_path }}/{{ env }}/services_resources.yml"

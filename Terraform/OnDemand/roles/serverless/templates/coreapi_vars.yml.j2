@@ -1,0 +1,8 @@
+appc_services_resources:
+{% for item in service_resources %}
+{% if item.LogicalResourceId in appc_resources %}
+  {{ appc_resources[item.LogicalResourceId] }}: "{{ item.PhysicalResourceId }}"
+{% endif %}
+{% endfor %}
+
+
